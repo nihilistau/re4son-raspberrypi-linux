@@ -10,7 +10,7 @@
  * To work on Raspberry Pi 1, set BCM2708_PERI_BASE to 0x20000000 
  */
 
-#define RPI_POWER_SWITCH_VERSION "1.7"
+#define RPI_POWER_SWITCH_VERSION "2.0"
 #define POWER_SWITCH_CLASS_NAME "rpi-power-switch"
 
 #include <linux/module.h>
