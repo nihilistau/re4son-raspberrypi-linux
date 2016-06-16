@@ -5,6 +5,9 @@
  *
  * - Written by Sean Cross for Adafruit Industries (www.adafruit.com)
  * - Updated for kernel 4.4 by re4son [at] whitedome.com.au
+ *
+ * Works only on Raspberry Pi 2 and newer
+ * To work on Raspberry Pi 1, set BCM2708_PERI_BASE to 0x20000000 
  */
 
 #define RPI_POWER_SWITCH_VERSION "1.7"
@@ -27,7 +30,7 @@
 
 /* the BCM2709 redefines this for us right!
    apparently it doesn't anymore in kernel 4.4 - re4son
-   so I set it to 0x3F000000
+   so I set it to 0x3F000000 (set to 0x20000000 for Pi 1)
 */
 #define BCM2708_PERI_BASE	0x3F000000
 
