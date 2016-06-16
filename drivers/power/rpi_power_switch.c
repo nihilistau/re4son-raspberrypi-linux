@@ -4,15 +4,16 @@
  * Simulated power switch / button, using the GPIO banks.
  *
  * - Written by Sean Cross for Adafruit Industries (www.adafruit.com)
+ * - Updated for kernel 4.4 by re4son [at] whitedome.com.au
  */
 
 #define RPI_POWER_SWITCH_VERSION "1.7"
 #define POWER_SWITCH_CLASS_NAME "rpi-power-switch"
 
 #include <linux/module.h>
-
+/* Updated paths to work with kernel 4.4 */
 #include <asm/io.h>
-#include <asm/gpio.h>
+#include <linux/gpio.h>
 #include <asm/delay.h>
 #include <linux/reboot.h>
 #include <linux/irq.h>
@@ -25,8 +26,11 @@
 
 
 /* the BCM2709 redefines this for us right!
-#define BCM2708_PERI_BASE	0x20000000
+   apparently it doesn't anymore in kernel 4.4 - re4son
+   so I set it to 0x3F000000
 */
+#define BCM2708_PERI_BASE	0x3F000000
+
 #define GPIO_BASE		(BCM2708_PERI_BASE + 0x200000)
 
 #define GPPUD (gpio_reg+0x94)
@@ -442,7 +446,7 @@ void __exit rpi_power_switch_cleanup(void)
 module_init(rpi_power_switch_init);
 module_exit(rpi_power_switch_cleanup);
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Sean Cross <xobs@xoblo.gs> for Adafruit Industries <www.adafruit.com>");
+MODULE_AUTHOR("Sean Cross <xobs@xoblo.gs> for Adafruit Industries <www.adafruit.com> and reason@whitedome.com.au");
 MODULE_ALIAS("platform:bcm2708_power_switch");
 module_param(gpio_pin, int, 0);
 module_param(led_pin, int, 0);
