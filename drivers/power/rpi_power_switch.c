@@ -13,7 +13,7 @@
 
 #include <asm/io.h>
 #include <asm/gpio.h>
-#include <linux/delay.h>
+#include <asm/delay.h>
 #include <linux/reboot.h>
 #include <linux/irq.h>
 #include <linux/err.h>
