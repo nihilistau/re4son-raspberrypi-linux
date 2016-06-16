@@ -32,7 +32,8 @@
    apparently it doesn't anymore in kernel 4.4 - re4son
    so I set it to 0x3F000000 (set to 0x20000000 for Pi 1)
 */
-#define BCM2708_PERI_BASE	0x3F000000
+/* #define BCM2708_PERI_BASE	0x3F000000 */
+#define BCM2708_PERI_BASE	0x20000000
 
 #define GPIO_BASE		(BCM2708_PERI_BASE + 0x200000)
 
@@ -331,7 +332,7 @@ int __init rpi_power_switch_init(void)
 	old_pm_power_off = pm_power_off;
 	pm_power_off = rpi_power_switch_power_off;
 
-	pr_info("Adafruit Industries' power switch driver v%s\n",
+	pr_info("Adafruit Industries' power switch driver - Re4son edition v%s\n",
 		RPI_POWER_SWITCH_VERSION);
 
 	INIT_DELAYED_WORK(&initiate_shutdown_work, initiate_shutdown);
