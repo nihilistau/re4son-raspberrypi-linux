@@ -48,6 +48,7 @@
 #define STMPE_FIFO_STA_RESET		(1<<0)
 
 #define STMPE_IRQ_TOUCH_DET		0
+#define STMPE_IRQ_FIFO_TH		1
 
 #define SAMPLE_TIME(x)			((x & 0xf) << 4)
 #define MOD_12B(x)			((x & 0x1) << 3)
@@ -79,6 +80,9 @@ struct stmpe_touch {
 	u8 i_drive;
 };
 
+static unsigned debug;
+module_param(debug, uint, 0);
+
 static int __stmpe_reset_fifo(struct stmpe *stmpe)
 {
 	int ret;
@@ -100,6 +104,9 @@ static void stmpe_work(struct work_struct *work)
 	struct stmpe_touch *ts =
 	    container_of(work, struct stmpe_touch, work.work);
 
+	if (debug > 1)
+		printk("%s()\n", __func__);
+
 	int_sta = stmpe_reg_read(ts->stmpe, STMPE_REG_INT_STA);
 
 	/*
@@ -115,12 +122,36 @@ static void stmpe_work(struct work_struct *work)
 		udelay(100);
 	}
 
+	if (debug > 1)
+		printk("    timeout=%u, INT_STA=0x%02X\n", timeout, int_sta);
+
 	/* reset the FIFO before we report release event */
 	__stmpe_reset_fifo(ts->stmpe);
 
 	input_report_abs(ts->idev, ABS_PRESSURE, 0);
 	input_report_key(ts->idev, BTN_TOUCH, 0);
 	input_sync(ts->idev);
+
+	/*
+	 * Sometimes the FIFO_TH interrupt flag is not cleared.
+	 * This prevents the controller from generating a new interrupt.
+	 * Clear the flag and re-enable the touchscreen controller to be
+	 * sure it's in working order again.
+	 * If a touch IRQ happens while in this function, FIFO_TH will be set,
+	 * but it doesn't indicate a hang. We reset anyway since the
+	 * consequence is loosing just one data point.
+	 */
+	if (int_sta & (1 << STMPE_IRQ_FIFO_TH)) {
+		stmpe_set_bits(ts->stmpe, STMPE_REG_TSC_CTRL,
+				STMPE_TSC_CTRL_TSC_EN, 0);
+		stmpe_reg_write(ts->stmpe, STMPE_REG_INT_STA, (1 << STMPE_IRQ_FIFO_TH));
+		__stmpe_reset_fifo(ts->stmpe);
+		stmpe_set_bits(ts->stmpe, STMPE_REG_TSC_CTRL,
+			STMPE_TSC_CTRL_TSC_EN, STMPE_TSC_CTRL_TSC_EN);
+		if (debug)
+			printk("    cleared interrupt flag FIFO_TH, INT_STA: 0x%02X -> 0x%02X\n",
+				int_sta, stmpe_reg_read(ts->stmpe, STMPE_REG_INT_STA));
+	}
 }
 
 static irqreturn_t stmpe_ts_handler(int irq, void *data)
@@ -128,6 +159,9 @@ static irqreturn_t stmpe_ts_handler(int irq, void *data)
 	u8 data_set[4];
 	int x, y, z;
 	struct stmpe_touch *ts = data;
+
+	if (debug > 1)
+		printk("%s()\n", __func__);
 
 	/*
 	 * Cancel scheduled polling for release if we have new value
@@ -150,11 +184,19 @@ static irqreturn_t stmpe_ts_handler(int irq, void *data)
 	y = ((data_set[1] & 0xf) << 8) | data_set[2];
 	z = data_set[3];
 
-	input_report_abs(ts->idev, ABS_X, x);
-	input_report_abs(ts->idev, ABS_Y, y);
-	input_report_abs(ts->idev, ABS_PRESSURE, z);
-	input_report_key(ts->idev, BTN_TOUCH, 1);
-	input_sync(ts->idev);
+	/*
+	 * Skip empty datasets
+	 * If stmpe_ts_handler() interrupts stmpe_work(), and stmpe_work
+	 * hasn't reset the FIFO yet, the FIFO will be empty here.
+	 * This is because stmpe_ts_handler waits for stmpe_work to finish
+	 */
+	if (x && y && z) {
+	       input_report_abs(ts->idev, ABS_X, x);
+	       input_report_abs(ts->idev, ABS_Y, y);
+	       input_report_abs(ts->idev, ABS_PRESSURE, 0xff - z);
+	       input_report_key(ts->idev, BTN_TOUCH, 1);
+	       input_sync(ts->idev);
+	}
 
        /* flush the FIFO after we have read out our values. */
 	__stmpe_reset_fifo(ts->stmpe);
@@ -267,10 +309,27 @@ static void stmpe_ts_close(struct input_dev *dev)
 static void stmpe_ts_get_platform_info(struct platform_device *pdev,
 					struct stmpe_touch *ts)
 {
+	struct stmpe *stmpe = dev_get_drvdata(pdev->dev.parent);
 	struct device_node *np = pdev->dev.of_node;
-	u32 val;
+	struct stmpe_ts_platform_data *ts_pdata = NULL;
 
-	if (np) {
+	ts->stmpe = stmpe;
+
+	if (stmpe->pdata && stmpe->pdata->ts) {
+		ts_pdata = stmpe->pdata->ts;
+
+		ts->sample_time = ts_pdata->sample_time;
+		ts->mod_12b = ts_pdata->mod_12b;
+		ts->ref_sel = ts_pdata->ref_sel;
+		ts->adc_freq = ts_pdata->adc_freq;
+		ts->ave_ctrl = ts_pdata->ave_ctrl;
+		ts->touch_det_delay = ts_pdata->touch_det_delay;
+		ts->settling = ts_pdata->settling;
+		ts->fraction_z = ts_pdata->fraction_z;
+		ts->i_drive = ts_pdata->i_drive;
+	} else if (np) {
+		u32 val;
+
 		if (!of_property_read_u32(np, "st,sample-time", &val))
 			ts->sample_time = val;
 		if (!of_property_read_u32(np, "st,mod-12b", &val))
@@ -294,7 +353,6 @@ static void stmpe_ts_get_platform_info(struct platform_device *pdev,
 
 static int stmpe_input_probe(struct platform_device *pdev)
 {
-	struct stmpe *stmpe = dev_get_drvdata(pdev->dev.parent);
 	struct stmpe_touch *ts;
 	struct input_dev *idev;
 	int error;
@@ -313,7 +371,6 @@ static int stmpe_input_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	platform_set_drvdata(pdev, ts);
-	ts->stmpe = stmpe;
 	ts->idev = idev;
 	ts->dev = &pdev->dev;
 
@@ -336,16 +393,19 @@ static int stmpe_input_probe(struct platform_device *pdev)
 	idev->name = STMPE_TS_NAME;
 	idev->phys = STMPE_TS_NAME"/input0";
 	idev->id.bustype = BUS_I2C;
+	idev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
+	idev->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
 
 	idev->open = stmpe_ts_open;
 	idev->close = stmpe_ts_close;
 
 	input_set_drvdata(idev, ts);
 
-	input_set_capability(idev, EV_KEY, BTN_TOUCH);
 	input_set_abs_params(idev, ABS_X, 0, XY_MASK, 0, 0);
 	input_set_abs_params(idev, ABS_Y, 0, XY_MASK, 0, 0);
 	input_set_abs_params(idev, ABS_PRESSURE, 0x0, 0xff, 0, 0);
+	set_bit(ABS_PRESSURE, idev->absbit); 
+	set_bit(BTN_TOUCH, idev->keybit); 
 
 	error = input_register_device(idev);
 	if (error) {
@@ -367,19 +427,14 @@ static int stmpe_ts_remove(struct platform_device *pdev)
 
 static struct platform_driver stmpe_ts_driver = {
 	.driver = {
-		.name = STMPE_TS_NAME,
-	},
+		   .name = STMPE_TS_NAME,
+		   },
 	.probe = stmpe_input_probe,
 	.remove = stmpe_ts_remove,
 };
 module_platform_driver(stmpe_ts_driver);
 
-static const struct of_device_id stmpe_ts_ids[] = {
-	{ .compatible = "st,stmpe-ts", },
-	{ },
-};
-MODULE_DEVICE_TABLE(of, stmpe_ts_ids);
-
 MODULE_AUTHOR("Luotao Fu <l.fu@pengutronix.de>");
 MODULE_DESCRIPTION("STMPEXXX touchscreen driver");
 MODULE_LICENSE("GPL");
+MODULE_ALIAS("platform:" STMPE_TS_NAME);
