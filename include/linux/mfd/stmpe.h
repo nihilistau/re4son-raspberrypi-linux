@@ -117,7 +117,7 @@ extern int stmpe_disable(struct stmpe *stmpe, unsigned int blocks);
 
 #define STMPE_GPIO_NOREQ_811_TOUCH	(0xf0)
 
-//**
+/**
  * struct stmpe_ts_platform_data - stmpe811 touch screen controller platform
  * data
  * @sample_time: ADC converstion time in number of clock.
