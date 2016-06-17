@@ -24,7 +24,7 @@
 #include <linux/i2c.h>
 #include <linux/workqueue.h>
 
-#include <linux/stmpe.h>
+#include <linux/mfd/stmpe.h>
 
 /* Register layouts and functionalities are identical on all stmpexxx variants
  * with touchscreen controller
